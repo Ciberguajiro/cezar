@@ -1,10 +1,36 @@
 import { readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { perRunner } from '@open-mercato/cezar-contract';
 import { worktreeLifecycleConfigSchema } from '@open-mercato/cezar-contract';
 import { DEFAULT_ARCHIVED_TASK_DELETE_DAYS, DEFAULT_WORKTREE_IDLE_DAYS, loadWorkspaceConfig, type WorkspaceConfig } from './workspace/config.ts';
 import { RUNNER_IDS } from './core/agent-runner.ts';
+
+/** Detect an installed coding-agent backend; caches result for 60s. */
+let installedBackendCache: { at: number; backend: string } | undefined;
+const INSTALLED_BACKEND_TTL_MS = 60_000;
+
+function detectInstalledBackend(): string {
+  const now = Date.now();
+  if (installedBackendCache && now - installedBackendCache.at < INSTALLED_BACKEND_TTL_MS) {
+    return installedBackendCache.backend;
+  }
+  // Check common binaries; order prefers non-claude when claude is absent.
+  const candidates = ['opencode', 'codex', 'cursor', 'pi', 'junie', 'copilot', 'gemini', 'kimi', 'omp', 'antigravity', 'claude'];
+  let found = 'claude';
+  for (const bin of candidates) {
+    try {
+      execFileSync('which', [bin], { stdio: 'ignore' });
+      found = bin;
+      break;
+    } catch {
+      // not on PATH
+    }
+  }
+  installedBackendCache = { at: now, backend: found };
+  return found;
+}
 
 /**
  * Optional advanced config at `.ai/cezar/config.json`. Zero-config rule:
@@ -208,15 +234,34 @@ export async function loadConfig(repoRoot: string): Promise<CezConfig> {
   try {
     raw = await readFile(join(repoRoot, '.ai/cezar', 'config.json'), 'utf8');
   } catch {
-    return configSchema.parse(withMachineDefaults({}, machine));
+    return effectiveConfig({}, machine);
   }
   try {
-    const parsed = configSchema.safeParse(withMachineDefaults(JSON.parse(raw), machine));
-    if (parsed.success) return parsed.data;
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return effectiveConfig(parsed as Record<string, unknown>, machine);
+    }
   } catch {
     // fall through — malformed JSON degrades to the default
   }
-  return configSchema.parse(withMachineDefaults({}, machine));
+  return effectiveConfig({}, machine);
+}
+
+/**
+ * Resolve the effective default runner: an explicit per-repo or machine-wide choice wins;
+ * otherwise pick the first installed backend (an OpenCode-only install defaults to OpenCode,
+ * not to the historical Claude fallback).
+ */
+function effectiveConfig(raw: Record<string, unknown>, machine: WorkspaceConfig['agentDefaults']): CezConfig {
+  const base = configSchema.parse(withMachineDefaults(raw, machine));
+  const explicit = raw.defaultRunner !== undefined;
+  if (!explicit && base.defaultRunner === 'claude') {
+    const detected = detectInstalledBackend();
+    if (RUNNER_IDS.includes(detected as never)) {
+      return { ...base, defaultRunner: detected as CezConfig['defaultRunner'] };
+    }
+  }
+  return base;
 }
 
 /**

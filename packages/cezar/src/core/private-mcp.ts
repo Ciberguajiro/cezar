@@ -218,7 +218,7 @@ export function opencodeConfigContent(servers: readonly PrivateMcpServer[], exis
 }
 
 /** Loaded after the project's own config, so a repository cannot grant itself back these tools. */
-export function opencodeReadOnlyConfig(existing?: string): string {
+export function opencodeReadOnlyConfig(existing?: string, allowedBashPrefixes?: readonly string[]): string {
   let base: Record<string, unknown> = {};
   try {
     const parsed: unknown = JSON.parse(existing ?? '{}');
@@ -226,7 +226,19 @@ export function opencodeReadOnlyConfig(existing?: string): string {
   } catch {
     // an unparseable host value cannot be merged into; the denial still applies
   }
-  const deny = { edit: 'deny', bash: 'deny' };
+  const denyEdit = 'deny';
+  // Build bash permission rules: allow specific prefixes, deny everything else.
+  const bashRules: Record<string, string> = {};
+  if (allowedBashPrefixes && allowedBashPrefixes.length > 0) {
+    for (const prefix of allowedBashPrefixes) {
+      const trimmed = prefix.trim();
+      if (!trimmed) continue;
+      bashRules[trimmed] = 'allow';
+      bashRules[`${trimmed} *`] = 'allow';
+    }
+  }
+  bashRules['*'] = 'deny';
+  const deny = { edit: denyEdit, bash: bashRules };
   // A repository's own agent definitions carry their own `permission`, which outranks the top level.
   const agents = isObject(base.agent) ? base.agent : {};
   const agent = Object.fromEntries(
