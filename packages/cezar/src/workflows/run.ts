@@ -42,8 +42,8 @@ import { isUsageExhaustion, parseUsageLimit } from '../core/usage-limit.ts';
 import { diskFullAgentErrorText } from '../disk-space.ts';
 import { accountStateHint, classifyAgentFailure, isOauthRefreshRace, transientRetryCap, transientRetryDelayMs } from '../core/agent-failure-class.ts';
 import { reportAgentError } from '../runs/agent-error-telemetry.ts';
-import { createRunner } from '../core/runner-factory.ts';
-import { REASONING_EFFORT_UNSUPPORTED_ERROR, runnerSupportsReasoningEffort, type RunnerId } from '../core/agent-runner.ts';
+import { createRunner, canEnforceReadOnly } from '../core/runner-factory.ts';
+import { REASONING_EFFORT_UNSUPPORTED_ERROR, runnerSupportsReasoningEffort, type AgentBackend, type RunnerId } from '../core/agent-runner.ts';
 import { modelConflictsWithRunner, pinSurvivesRunnerSwitch } from '../core/model-presets.ts';
 import { AGENT_MODELS_LOCKED_ERROR, agentModelsLocked } from '../core/agent-model-policy.ts';
 import {
@@ -2194,6 +2194,12 @@ export class RunManager {
     }
     if (run.worktree === false && input.readOnly) {
       this.store.updateRun(run.id, { readOnly: true, ...(input.enforceReadOnly ? { enforceReadOnly: true as const } : {}) });
+    }
+    // A read-only workflow (review-pr, review-council, …) on a backend with a native read-only
+    // control (OpenCode's OPENCODE_CONFIG_CONTENT) runs under that enforcement, not via the
+    // allowedTools path the backend ignores.
+    if (input.runner && isReadOnlyWorkflow(workflow) && canEnforceReadOnly(input.runner as AgentBackend)) {
+      this.store.updateRun(run.id, { readOnly: true, enforceReadOnly: true });
     }
     if (input.subject) this.store.updateRun(run.id, { subject: input.subject });
     if (input.startedByManager && input.managerAgent) {

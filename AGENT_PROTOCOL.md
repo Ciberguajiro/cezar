@@ -138,11 +138,7 @@ Notable fields (full doc-comments in the source):
   read-only `allowedTools`. When set, the task must not change the repository or publish anything, on every backend:
   Claude through `allowedTools` plus `--disallowedTools` for the write tools (settings allow
   rules cannot widen a deny), Pi through `allowedTools` (no shell), Codex through an isolated home, environment-free native turns and cezar’s read broker,
-  OpenCode denied `edit`/`bash` in `OPENCODE_CONFIG_CONTENT` at the top level and in every agent, Cursor `--mode ask` without `--force`, Copilot
-  `--deny-tool` with its permission prompts refused, Junie without `brave_mode` with its prompts
-  refused, Gemini `--approval-mode default` with its prompts refused. Kimi, omp and Antigravity
-  cannot, so `runner-factory.ts` refuses a read-only run on them. `read-only-env.ts` is the shared floor (no `gh` login, no git credential). A new runner
-  that cannot enforce it must fail the run, never ignore the field.
+  OpenCode through `OPENCODE_CONFIG_CONTENT` at the top level and in every agent — denying `edit` and `bash`, with an allowlist of bash prefixes (READ_ONLY_BASH_PREFIXES). Read-only workflows (review-pr, review-council) that carry `enforceReadOnly: true` use this native enforcement instead of the `allowedTools` path, which OpenCode does not honor (caveat #430). A new runner that cannot enforce it must fail the run, never ignore the field.
 - `allowedTools?` / `bashAllowlist?` / `additionalDirectories?` — tool access.
   **Caveat (#430):** the zero-config default (`DEFAULT_ALLOWED_TOOLS`) includes
   unrestricted `Bash`. OpenCode does not honor `allowedTools`. Codex preserves the historical

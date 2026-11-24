@@ -38,19 +38,31 @@ describe('readOnlyEnv', () => {
 describe('opencodeReadOnlyConfig', () => {
   it('denies edits and the shell over whatever the host config granted', () => {
     const config = JSON.parse(opencodeReadOnlyConfig('{"mcp":{"a":1},"permission":{"bash":"allow"}}'));
-    expect(config.permission).toEqual({ edit: 'deny', bash: 'deny' });
+    expect(config.permission).toEqual({ edit: 'deny', bash: { '*': 'deny' } });
     expect(config.mcp).toEqual({ a: 1 });
   });
 
   it('denies inside every agent, so a repo agent cannot grant edit or bash back', () => {
     const config = JSON.parse(opencodeReadOnlyConfig('{"agent":{"build":{"model":"m","permission":{"bash":"allow"}},"mine":{"permission":{"edit":"allow"}}}}'));
-    expect(config.agent.build).toEqual({ model: 'm', permission: { edit: 'deny', bash: 'deny' } });
-    expect(config.agent.mine.permission).toEqual({ edit: 'deny', bash: 'deny' });
-    expect(config.agent.plan.permission).toEqual({ edit: 'deny', bash: 'deny' });
+    expect(config.agent.build).toEqual({ model: 'm', permission: { edit: 'deny', bash: { '*': 'deny' } } });
+    expect(config.agent.mine.permission).toEqual({ edit: 'deny', bash: { '*': 'deny' } });
+    expect(config.agent.plan.permission).toEqual({ edit: 'deny', bash: { '*': 'deny' } });
   });
 
   it('still denies when the host value cannot be read', () => {
-    expect(JSON.parse(opencodeReadOnlyConfig('not json')).permission.bash).toBe('deny');
+    expect(JSON.parse(opencodeReadOnlyConfig('not json')).permission.bash).toEqual({ '*': 'deny' });
+  });
+
+  it('allows only the read-only bash prefixes when an allowlist is given', () => {
+    const config = JSON.parse(opencodeReadOnlyConfig('{"mcp":{"a":1}}', ['gh pr view', 'git status']));
+    expect(config.permission.bash).toEqual({
+      'gh pr view': 'allow',
+      'gh pr view *': 'allow',
+      'git status': 'allow',
+      'git status *': 'allow',
+      '*': 'deny',
+    });
+    expect(config.mcp).toEqual({ a: 1 });
   });
 });
 

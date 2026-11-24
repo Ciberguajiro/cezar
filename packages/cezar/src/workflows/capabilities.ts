@@ -2,6 +2,7 @@ import type { WorkflowCapabilities } from '@open-mercato/cezar-contract';
 import type { AgentBackend } from '../core/agent-runner.ts';
 import type { GraphNode } from './graph.ts';
 import { DEFAULT_ALLOWED_TOOLS, stepKind, type WorkflowDef, type WorkflowStepDef } from './types.ts';
+import { canEnforceReadOnly } from '../core/runner-factory.ts';
 
 /**
  * What a workflow can do outside the machine, read statically from its definition so a manager
@@ -135,8 +136,14 @@ const TOOL_LIMITS_ENFORCED: Record<AgentBackend, boolean> = {
 /**
  * A read-only workflow's agent refuses a backend that would ignore its tool limits — the only
  * thing between it and a push. `undefined` when the step may run.
+ *
+ * A backend that cannot honor `allowedTools`/`bashAllowlist` (OpenCode ignores them) can still
+ * enforce read-only natively through `enforceReadOnly` (OPENCODE_CONFIG_CONTENT denying edit/
+ * bash). Such a backend passes this refusal — the caller must then route the step's tool policy
+ * through `enforceReadOnly` rather than `allowedTools`.
  */
 export function readOnlyWorkflowRefusal(def: WorkflowDef | undefined, backend: AgentBackend): string | undefined {
-  if (!def || TOOL_LIMITS_ENFORCED[backend] || !isReadOnlyWorkflow(def)) return undefined;
+  if (!def || !isReadOnlyWorkflow(def)) return undefined;
+  if (TOOL_LIMITS_ENFORCED[backend] || canEnforceReadOnly(backend)) return undefined;
   return `${backend} does not enforce a step's tool limits, so the read-only workflow "${def.name}" will not run on it — pick Claude Code, Codex or Pi for this task.`;
 }
